@@ -25,7 +25,7 @@ const unsigned int SG = A4;
 const unsigned int LC = A5;
 
 // Torque ramp 
-const int LOWPOS = 500;
+const int LOWPOS = 200;
 const int HIGHPOS = 2000;
 const int HIGHFORCE = 363;
 const int LOWFORCE = 300;
@@ -100,30 +100,13 @@ void loop() {
     setEffort(0);
     myPID.deactivate();
   }
-  // ---------------------------- target ramping --------------------------------//
-  
-  int yolomid = 20 * 310; // should be 0 strain (20 * 338??)
-  int yoloamp = 20 * 45;
-  
-  if (rampingUp) {
-    yolo++;
-  } else {
-    yolo--;
-  }
-  
-  if(yolo>= (yolomid + yoloamp))
-  {
-    rampingUp = false;
-  }
-  
-  if (yolo <= (yolomid - yoloamp))
-  {
-    rampingUp = true;
-  }
   
   
-  target = yolo/20;
-//  Serial.println(encread);
+  // simplest control
+  int strainoffset = 318; // Lower numbers will bias motor clockwise
+  target = strainoffset;
+  
+  
 }
 
 void setEffort(signed int effortSetting)
