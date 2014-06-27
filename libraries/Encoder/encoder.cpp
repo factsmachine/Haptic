@@ -22,7 +22,7 @@ unsigned int Encoder::read()
 	digitalWrite(CS, LOW);
 	delayMicroseconds(1); //Waiting for Tclkfe
 
-	//Passing 12 times, from 0 to 11
+	// Passing 12 times, from 0 to 11 (one per bit)
 	for (int x = 0; x<12; x++)
 	{
 		digitalWrite(CLK, LOW);
