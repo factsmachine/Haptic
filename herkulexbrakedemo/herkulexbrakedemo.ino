@@ -21,6 +21,9 @@ void setup()
 }
 
 void loop(){
+  delay(200);
+  Serial.println(herk_brake->getAngle());
+  
   pressedInNow = (digitalRead(BUTTON_PIN) == LOW);
   if (pressedInNow && !pressedInLast) {
     Serial.println("Braking!");

@@ -1,9 +1,9 @@
 // Reads 12-bit encoder. Modified by Ed Foley from RobinL's 10-bit version for Arduino Uno.
  
 // Define constants
-const int CSn = A2; // Chip select pin
-const int CLK = A1; // Clock signal pin
-const int DO = A0;  // Digital output pin
+const int CSn = 51; // Chip select pin
+const int CLK = 52; // Clock signal pin
+const int DO = 53;  // Digital output pin
 
 unsigned int sensorWaarde = 0;
 
