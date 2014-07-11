@@ -101,8 +101,8 @@ float wall_stiffness = 1000.0f;
 int wall = 1830;
 
 // Virtual wall feathering
-int forecast = 1;
-int wall_margin = 10;
+//int forecast = 1;
+//int wall_margin = 10;
 
 // Sensor readings
 long encread;
@@ -113,7 +113,7 @@ long lastsgread;
 long csread;
 
 // Control parameters
-long ctl_delay = 2000;  // NOTE THIS!!! WE INTENTIONALLY SLOW DOWN OUR LOOP!!!
+long ctl_delay = 0;  // NOTE THIS!!! WE INTENTIONALLY SLOW DOWN OUR LOOP!!!
 long input;
 long output;
 long target;
@@ -124,8 +124,8 @@ int prediction;
 int predicted_error;
 
 // Button variables
-bool pressedInNow = false;
-bool pressedInLast = false;
+//bool pressedInNow = false;
+//bool pressedInLast = false;
 
 // Motor effort variables
 long effort = 0;
@@ -146,7 +146,7 @@ bool debug_flag = false;
 long start_time;
 long elapsed;
 bool gravity_compensate = true;
-int max_gauge_change = 100;
+int max_gauge_change = 1;  // mega kludge
 
 // Objects
 OSMC* osmc;
@@ -267,6 +267,7 @@ void loop() {
       } else if (error > 0) {
         debug_LED->turnOff();
         reaction = -(long)(wall_stiffness * error);
+        lastsgread = sgreadraw; // Will this help with wall instability?
         
         if (gravity_compensate) {
           reaction += -(long)(GRAVITY_STRAIN * sin(PI * (encread - CALIB_MID) / 2048.0f));

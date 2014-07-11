@@ -2,6 +2,7 @@
 #include <HerkBrake.h>
 #include <encoder.h>
 #include <PID_lite.h>
+#include <LED.h>
 
 //==========================================PIN ASSIGNMENTS
 // OSMC
@@ -250,6 +251,7 @@ void loop() {
       } else if (error > 0) {
         debug_LED->turnOff();
         reaction = -(long)(wall_stiffness * error);
+        lastsgread = sgread; // Will this help with wall instability?
         
         if (gravity_compensate) {
           reaction += -(long)(GRAVITY_STRAIN * sin(PI * (encread - CALIB_MID) / 2048.0f));

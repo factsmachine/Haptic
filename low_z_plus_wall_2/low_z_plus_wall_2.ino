@@ -5,6 +5,7 @@
 #include <LED.h>
 #include <Button.h>
 #include <AnalogDevice.h>
+#include <PID_v1.h>
 
 //==========================================PIN ASSIGNMENTS
 // OSMC
@@ -28,20 +29,20 @@ const int DEBUG_LED_PIN = 13;
 
 //==========================================CONSTANTS
 // Compensations
-const int SG_OFFSET_AT_CALIBRATION = 300; // had been 450
-const float GRAVITY_STRAIN = 190.0f; // This is strain at high encoder position relative to neutral
+const int SG_OFFSET_AT_CALIBRATION = 225; // had been 450
+const float GRAVITY_STRAIN_DEFAULT = 350.0f; // This is strain at high encoder position relative to neutral
 
-// Default effort limits
+// Default effort limoits
 const long EFFORT_LIMIT_LOW_DEFAULT = -20000; // changed from -20000
 const long EFFORT_LIMIT_HIGH_DEFAULT = 20000; // changed from 20000
 const long VELOCITY_TIME_GAP = 10000; // 100000 means updating speed every 1/10 of a second
 
 // Dead-zone limits
-const int LOWPOS = 824;
-const int HIGHPOS = 1962;
+const int LOWPOS = 1110;
+const int HIGHPOS = 3160;
 
 // Calibration
-const unsigned int CALIB_MID = 1848;
+const unsigned int CALIB_MID = 2135;
 const unsigned int CALIB_TOL = 50;
 const unsigned int CALIB_WAIT = 10000;
 
@@ -67,10 +68,13 @@ const char COM_SET_FORECAST = 'f';
 const char COM_SET_MAX_SPEED = 'x';
 const char COM_SET_DELAY = ';';
 const char COM_SET_OFFSET = 'o';
+const char COM_SET_OFFSET_NEG = 'l';
 const char COM_DEBUG_TOGGLE = 't';
 const char COM_GRAVITY_TOGGLE = 'g';
 const char COM_RECALIBRATE = 'r';
 const char COM_SET_MAX_GAUGE_CHANGE = '^';
+const char COM_SET_GRAVITY_STRAIN = 's';
+const char COM_FLIP_NORMAL = 'n';
 
 //==================================STATE DEFINITIONS
 const int STATE_SG_NEUTRAL = 1;
@@ -86,9 +90,10 @@ const int STATE_EMERGENCY = 99;
 int STATE = 0;
 
 // Control parameters
-float kp = 25.0f;
-float ki = 0;
-float kd = 0;
+// THESE MAKE ME NERVOUS AS DOUBLES... BUT PID WANTS THEM
+double kp = 25.0f;
+double ki = 0.0f;
+double kd = 0.0f;
 float kd_overspeed = 200.0f;
 
 // Overspeed parameters
@@ -98,11 +103,12 @@ long apparent_speed;
 
 // Dynamic parameters
 float wall_stiffness = 1000.0f;
-int wall = 1830;
+int wall = 2700;
+bool positive_normal = false;
 
 // Virtual wall feathering
-int forecast = 1;
-int wall_margin = 10;
+//int forecast = 1;
+//int wall_margin = 10;
 
 // Sensor readings
 long encread;
@@ -113,19 +119,22 @@ long lastsgread;
 long csread;
 
 // Control parameters
-long ctl_delay = 2000;  // NOTE THIS!!! WE INTENTIONALLY SLOW DOWN OUR LOOP!!!
-long input;
+long ctl_delay = 0;  // NOTE THIS!!! WE INTENTIONALLY SLOW DOWN OUR LOOP!!!
+/*long input;
 long output;
-long target;
+long target;*/
+double input;
+double output;
+double target;
 bool go_flag = true;
 long reaction;
-int error;
+int encroachment;
 int prediction;
 int predicted_error;
-
+float gravity_strain = GRAVITY_STRAIN_DEFAULT;
 // Button variables
-bool pressedInNow = false;
-bool pressedInLast = false;
+//bool pressedInNow = false;
+//bool pressedInLast = false;
 
 // Motor effort variables
 long effort = 0;
@@ -146,17 +155,18 @@ bool debug_flag = false;
 long start_time;
 long elapsed;
 bool gravity_compensate = true;
-int max_gauge_change = 100;
+int max_gauge_change = 1;  // mega kludge
 
 // Objects
 OSMC* osmc;
 HerkBrake* herk_brake;
 Encoder* enc;
-PID_lite* myPID;
+//PID_lite* myPID;
 LED* debug_LED;
 Button* e_stop;
 AnalogDevice* strain_gauge;
 AnalogDevice* current_sensor;
+PID* strain_ctrl;
 
 //=============================================METHODS
 void setup() {  
@@ -170,12 +180,16 @@ void setup() {
   enc = new Encoder(CSn, CLK, DO);
   e_stop = new Button(E_BUTTON_PIN, false);
   debug_LED = new LED(DEBUG_LED_PIN, LOW);
-  myPID = new PID_lite(&input, &output, &target, kp, ki, kd, 1000);
+  //myPID = new PID_lite(&input, &output, &target, kp, ki, kd, 1000);
   strain_gauge = new AnalogDevice(SG);
   current_sensor = new AnalogDevice(CURRENT_SENSE_PIN);
+  strain_ctrl = new PID(&input, &output, &target, kp, ki, kd, 1);
+  strain_ctrl->SetOutputLimits(effort_limit_low, effort_limit_high);
+  strain_ctrl->SetSampleTime(1); // milliseconds
+  strain_ctrl->SetMode(1); // required to set "auto" mode for some reason
   
   // Initialize relevant variables NOTE: Pay more attention to state transition variable changes in general
-  myPID->setSaturation(EFFORT_LIMIT_LOW_DEFAULT, EFFORT_LIMIT_HIGH_DEFAULT);
+  //myPID->setSaturation(EFFORT_LIMIT_LOW_DEFAULT, EFFORT_LIMIT_HIGH_DEFAULT);
   calibcount = 0;
   STATE = 1;  // Done with start-up, so transition 
 }
@@ -224,13 +238,15 @@ void loop() {
         go_flag = true;
         //lastencread = encread;
         apparent_speed = 0;
+        reaction = 0;
+        sgread = strain_gauge->read(); // So that we don't have immediate effort
         STATE = STATE_NORMAL_CONTROL;
       }
     break;
 
     case STATE_NORMAL_CONTROL: // General GO state
-      start_time = micros();
-      reaction = 0; // Reset
+      //start_time = micros();
+      //reaction = 0; // Reset
     
       delayMicroseconds(ctl_delay); // It bears repeating: fix hardware so we don't have to do this!!
     
@@ -242,13 +258,28 @@ void loop() {
       lastsgread = sgread;
       sgreadraw = strain_gauge->read();
       
-      // WEIRDNESS COMPENSATION STEP
-      if (sgreadraw > lastsgread && (sgreadraw - lastsgread) > max_gauge_change) {
-        sgread = lastsgread + max_gauge_change;
-      } else if (sgreadraw < lastsgread && (lastsgread - sgreadraw) > max_gauge_change) {
-        sgread = lastsgread - max_gauge_change;
-      } else {
-        sgread = sgreadraw;
+      encroachment = encread - wall; // Where we are relative to wall position
+      if (encroachment < 0 ^ positive_normal) {
+        encroachment = 0;
+      }
+      //encroachment = 0;
+      
+      // Strain gauge change limiting (only run when not in wall)
+      if (encroachment == 0)
+      {
+        if (sgreadraw > lastsgread && (sgreadraw - lastsgread) > max_gauge_change) {
+          sgread = lastsgread + max_gauge_change;
+        } else if (sgreadraw < lastsgread && (lastsgread - sgreadraw) > max_gauge_change) {
+          sgread = lastsgread - max_gauge_change;
+        } else {
+          sgread = sgreadraw;
+        }
+      }
+      else
+      {
+        // THE BELOW CAUSED VERY BAD ISSUES WHEN RIGHT NEAR THE WALL
+        //sgread = sgreadraw; // See if this helps inverse wall resistance
+        //lastsgread = sgreadraw;
       }
       
       // Update speed calc. Note that this entire routine only runs once every VELOCITY_TIME_GAP.
@@ -258,33 +289,39 @@ void loop() {
         lastencread = encread;
       }
       
-      error = encread - wall;
-      
       // If we're going too fast, replace control algorithm with our braking mechanism
       if (apparent_speed > max_speed || apparent_speed < -max_speed) {
         debug_LED->turnOn();
         reaction = -(long)(kd_overspeed * apparent_speed);
-      } else if (error > 0) {
+      }
+      // Otherwise, if we're in the wall, handle that
+      else if (encroachment != 0) {
         debug_LED->turnOff();
-        reaction = -(long)(wall_stiffness * error);
+        reaction = -(long)(wall_stiffness * encroachment);
+        //lastsgread = sgreadraw; // Will this help with wall instability?
         
         if (gravity_compensate) {
-          reaction += -(long)(GRAVITY_STRAIN * sin(PI * (encread - CALIB_MID) / 2048.0f));
+          reaction += -(long)(gravity_strain * sin(PI * (encread - CALIB_MID) / 2048.0f));
         }
         
-      } else {
+      }
+      // Othwerwise, run normal routine
+      else {
         debug_LED->turnOff();
-        input = (sgread + lastsgread) / 2; // seems to help results
         
+        input = (sgread + lastsgread)/2;        
         target = sgoffset - sg_calib_offset;
         
         if (gravity_compensate) {
-          target += (long)(GRAVITY_STRAIN * sin(PI * (encread - CALIB_MID) / 2048.0f));
-        }// else {
-        //
-        //}
+          target += (long)(gravity_strain * sin(PI * (encread - CALIB_MID) / 2048.0f));
+        }
         
-        reaction = (long)(kp * (input - target));        
+        if (strain_ctrl->Compute())
+        {
+          reaction = (long)(output);
+        }
+        
+        //reaction = (long)(kp * (input - target));        
       }
       
       //if (gravity_compensate) {
@@ -344,7 +381,8 @@ void loop() {
       }
       else {
         osmc->brake();
-        myPID->deactivate();
+        //myPID->deactivate();
+        strain_ctrl->clearIntegration();
         STATE = STATE_HALTED; // Note: deactivation above is technically redundant, but safer
         break;
       }
@@ -388,13 +426,16 @@ void loop() {
       // State transitions
       if (isEmergency()) {emergencyProcedure();}
       else if (go_flag && !isInDeadZone(encread)) {
+        apparent_speed = 0;
+        reaction = 0;
         STATE = STATE_NORMAL_CONTROL;
       }
     break;
     
     case STATE_HALTED:
       osmc->brake();
-      myPID->deactivate();
+      //myPID->deactivate();
+      strain_ctrl->clearIntegration();
       Serial.println("Halted.");
       
       // State transitions
@@ -410,6 +451,7 @@ void loop() {
       else if (go_flag) {
         Serial.println("Reactivated!");
         lastencread = enc->read(); // So speed kill isn't triggered
+        sgread = strain_gauge->read(); // So that we don't have immediate effort
         STATE = STATE_NORMAL_CONTROL;
       }
     break;        
@@ -479,17 +521,20 @@ void checkSerial()
       break;
     case COM_SET_KP:
       kp = parseInput();
-      myPID->setParameters(kp, ki, kd);
+      //myPID->setParameters(kp, ki, kd);
+      strain_ctrl->SetTunings(kp, ki, kd);
       Serial.println(kp, 4);
       break;
     case COM_SET_KI:
       ki =  parseInput();
-      myPID->setParameters(kp, ki, kd);
+      //myPID->setParameters(kp, ki, kd);
+      strain_ctrl->SetTunings(kp, ki, kd);
       Serial.println(ki, 4);
       break;
     case COM_SET_KD:
       kd =  parseInput();
-      myPID->setParameters(kp, ki, kd);
+      //myPID->setParameters(kp, ki, kd);
+      strain_ctrl->SetTunings(kp, ki, kd);
       Serial.println(kd, 4);
       break;
     case COM_SET_STIFFNESS:
@@ -502,7 +547,7 @@ void checkSerial()
       Serial.println("New wall position:");
       Serial.println(wall);
       break;
-    case COM_SET_WALL_MARGIN:
+    /*case COM_SET_WALL_MARGIN:
       wall_margin = (int)(parseInput());
       Serial.println("New wall margin:");
       Serial.println(wall_margin);
@@ -511,7 +556,7 @@ void checkSerial()
       forecast = (int)(parseInput());
       Serial.println("New forecast time [cs]:");
       Serial.println(forecast);
-      break;
+      break;*/
     case COM_SET_MAX_SPEED:
       max_speed = (int)(parseInput());
       Serial.println("New max speed [ticks/cs]");
@@ -524,6 +569,11 @@ void checkSerial()
       break;
     case COM_SET_OFFSET:
       sg_calib_offset = (int)(parseInput());
+      Serial.println("New offset [SG ADC ticks]");
+      Serial.println(sg_calib_offset);
+      break;
+    case COM_SET_OFFSET_NEG:
+      sg_calib_offset = -(int)(parseInput());
       Serial.println("New offset [SG ADC ticks]");
       Serial.println(sg_calib_offset);
       break;
@@ -545,6 +595,16 @@ void checkSerial()
       max_gauge_change = (unsigned int)(parseInput());
       Serial.println("New max gauge change [SG ADC ticks / control loop]");
       Serial.println(max_gauge_change);
+      break;
+    case COM_SET_GRAVITY_STRAIN:
+      gravity_strain = parseInput();
+      Serial.println("New gravity strain");
+      Serial.println(gravity_strain);
+      break;
+    case COM_FLIP_NORMAL:
+      positive_normal = !positive_normal;
+      Serial.println("Wall orientation flipped!");
+      Serial.println(positive_normal);
       break;
     }
   }
@@ -641,6 +701,8 @@ void printDebugInfo()
   Serial.print(target);
   /*Serial.print(" ERR");
   Serial.print(input - target);*/
+  Serial.print(" OUT");
+  Serial.print(output);
   Serial.print(" EFF");
   Serial.print(osmc->getEffort());
   Serial.println();
