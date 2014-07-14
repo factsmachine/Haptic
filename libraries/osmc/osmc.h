@@ -31,27 +31,31 @@
 
 class OSMC {
 public:
-	OSMC(int AHI_set, int BHI_set, int ALI_set, int BLI_set, int DIS_set);
+	OSMC(int AHI_set, int BHI_set, int ALI_set, int BLI_set, int DIS_set, long effort_limit_low_set, long effort_limit_high_set);
 	void brake();
 	//void unbrake();
 	void disable();
 	void enable();
-	void setEffort(int effort_setting);
-	int getEffort();
+	void setEffort(long effort_setting);
+	long getEffort();
 	bool isBraked();
 	bool isDisabled();
+	void setEffortLimitLow(long effort_limit_low_set);
+	void setEffortLimitHigh(long effort_limit_high_set);
+	void setEffortLimits(long effort_limit_low_set, long effort_limit_high_set);
+	long getEffortLimitLow();
+	long getEffortLimitHigh();
 
 	//void forward(int effort_setting);
 	//void reverse(int effort_setting);
 
 private:
 	int AHI, BHI, ALI, BLI, DIS;
-	bool braked;
-	int effort;
-	bool disabled;
+	long effort, effort_limit_low, effort_limit_high;
+	bool disabled, braked;
 
-	void forward(int effort_setting);
-	void reverse(int effort_setting);
+	void forward(long effort_setting);
+	void reverse(long effort_setting);
 };
 
 #endif

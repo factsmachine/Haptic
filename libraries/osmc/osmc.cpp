@@ -26,16 +26,18 @@ OTHER DEALINGS IN THE SOFTWARE.
 #include "osmc.h"
 #include "../pwm01/pwm01.h"
 
-const int EFFORT_LIMIT_HIGH = 4095;
-const int EFFORT_LIMIT_LOW = -4095;
-const int BASE_PWM_FREQUENCY = 2222;
+//const long EFFORT_LIMIT_HIGH = 65535;
+//const long EFFORT_LIMIT_LOW = -65535;
+const int BASE_PWM_FREQUENCY = 5000; // changed from 10000
 
-OSMC::OSMC(int AHI_set,int BHI_set,int ALI_set,int BLI_set, int DIS_set) {
+OSMC::OSMC(int AHI_set,int BHI_set,int ALI_set,int BLI_set, int DIS_set, long effort_limit_low_set, long effort_limit_high_set) {
 	AHI = AHI_set;
 	BHI = BHI_set;
 	ALI = ALI_set;
 	BLI = BLI_set;
 	DIS = DIS_set;
+	effort_limit_low = effort_limit_low_set;
+	effort_limit_high = effort_limit_high_set;
 	braked = false;
 	disabled = false;
 	effort = 0;
@@ -51,14 +53,14 @@ OSMC::OSMC(int AHI_set,int BHI_set,int ALI_set,int BLI_set, int DIS_set) {
 	digitalWrite(BLI, LOW);
 	digitalWrite(DIS, LOW);
 
-	pwm_set_resolution(12);
+	pwm_set_resolution(16);
 	pwm_setup(ALI, BASE_PWM_FREQUENCY, 1);
 	pwm_setup(BLI, BASE_PWM_FREQUENCY, 2);
 	pwm_write_duty(ALI, 0);
 	pwm_write_duty(BLI, 0);
 }
 
-void OSMC::forward(int effort_setting) {
+void OSMC::forward(long effort_setting) {
   digitalWrite(AHI, HIGH);
   digitalWrite(BHI, HIGH);
   pwm_write_duty(ALI, 0);
@@ -66,7 +68,7 @@ void OSMC::forward(int effort_setting) {
   digitalWrite(DIS, LOW);
 }
 
-void OSMC::reverse(int effort_setting) {
+void OSMC::reverse(long effort_setting) {
   digitalWrite(AHI, HIGH);
   digitalWrite(BHI, HIGH);
   pwm_write_duty(ALI, effort_setting);
@@ -93,14 +95,14 @@ void OSMC::enable() {
 	disabled = false;
 }
 
-void OSMC::setEffort(int effort_setting) {
+void OSMC::setEffort(long effort_setting) {
 	int temp_effort = effort_setting;
 
-	if (temp_effort > EFFORT_LIMIT_HIGH) {
-		temp_effort = EFFORT_LIMIT_HIGH;
+	if (temp_effort > effort_limit_high) {
+		temp_effort = effort_limit_high;
 	}
-	else if (temp_effort < EFFORT_LIMIT_LOW) {
-		temp_effort = EFFORT_LIMIT_LOW;
+	else if (temp_effort < effort_limit_low) {
+		temp_effort = effort_limit_low;
 	}
 
 	if (temp_effort >= 0) {
@@ -115,7 +117,7 @@ void OSMC::setEffort(int effort_setting) {
 	braked = false;
 }
 
-int OSMC::getEffort() {
+long OSMC::getEffort() {
 	return effort;
 }
 
@@ -125,4 +127,47 @@ bool OSMC::isBraked() {
 
 bool OSMC::isDisabled() {
 	return disabled;
+}
+
+void OSMC::setEffortLimitLow(long effort_limit_low_set) {
+	effort_limit_low = effort_limit_low_set;
+	
+	// WARNING: WHAT IF LOW LIMIT IS SET HIGHER THAN HIGH LIMIT???
+	if (effort < effort_limit_low)
+	{
+		if (!braked) {
+			setEffort(effort_limit_low);
+		}
+		else {
+			effort = effort_limit_low;
+		}
+	}
+}
+
+void OSMC::setEffortLimitHigh(long effort_limit_high_set) {
+	effort_limit_high = effort_limit_high_set;
+
+	// WARNING: WHAT IF HIGH LIMIT IS SET LOWER THAN LOW LIMIT???
+	if (effort > effort_limit_high)
+	{
+		if (!braked) {
+			setEffort(effort_limit_high);
+		}
+		else {
+			effort = effort_limit_high;
+		}
+	}
+}
+
+long OSMC::getEffortLimitLow() {
+	return effort_limit_low;
+}
+
+long OSMC::getEffortLimitHigh() {
+	return effort_limit_high;
+}
+
+void OSMC::setEffortLimits(long effort_limit_low_set, long effort_limit_high_set) {
+	setEffortLimitLow(effort_limit_low_set);
+	setEffortLimitHigh(effort_limit_high_set);
 }

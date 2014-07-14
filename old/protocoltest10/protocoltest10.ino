@@ -167,26 +167,32 @@ void loop() {
         case KP_UP:
           kp += 5;
           pos_ctrl->SetTunings(kp, ki, kd);
+          Serial.println(kp);
           break;
         case KP_DOWN:
           kp -= 5;
           pos_ctrl->SetTunings(kp, ki, kd);
+          Serial.println(kp);
           break;
         case KI_UP:
           ki += 5;
           pos_ctrl->SetTunings(kp, ki, kd);
+          Serial.println(ki);
           break;
         case KI_DOWN:
           ki -= 5;
           pos_ctrl->SetTunings(kp, ki, kd);
+          Serial.println(ki);
           break;
         case KD_UP:
           kd += 0.01;
           pos_ctrl->SetTunings(kp, ki, kd);
+          Serial.println(kd);
           break;
         case KD_DOWN:
           kd -= 0.01;
           pos_ctrl->SetTunings(kp, ki, kd);
+          Serial.println(kd);
           break;
       }
     }

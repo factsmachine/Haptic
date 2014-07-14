@@ -31,16 +31,43 @@ HerkBrake::HerkBrake(int motor_ID_set, int serial_port_set, float brake_travel_s
 	Herkulex.setLed(motor_ID, 1);
 }
 
+HerkBrake::HerkBrake(int motor_ID_set, int serial_port_set, float unbraked_angle_set, float braked_angle_set)
+{
+	brake_travel = braked_angle_set - unbraked_angle_set;
+	braked = false;
+	serial_port = serial_port_set;
+	motor_ID = motor_ID_set;
+
+	switch (serial_port) {
+	case 1:
+		Herkulex.beginSerial1(115200);
+		break;
+	case 2:
+		Herkulex.beginSerial2(115200);
+		break;
+	case 3:
+		Herkulex.beginSerial3(115200);
+		break;
+	}
+
+	Herkulex.reboot(motor_ID);
+	delay(500);					// Delays given in example code
+	Herkulex.initialize();
+	delay(200);
+	zero_pos = unbraked_angle_set;
+	Herkulex.moveOneAngle(motor_ID, zero_pos, 0, 1);
+}
+
 void HerkBrake::brake()
 {
 	braked = true;
-	Herkulex.moveOneAngle(motor_ID, fmod(zero_pos + brake_travel, 360.0f), BRAKE_TIME, 2);
+	Herkulex.moveOneAngle(motor_ID, fmod(zero_pos + brake_travel, 360.0f), BRAKE_TIME, 3);
 }
 
 void HerkBrake::unbrake()
 {
 	braked = false;
-	Herkulex.moveOneAngle(motor_ID, zero_pos, BRAKE_TIME, 3);
+	Herkulex.moveOneAngle(motor_ID, zero_pos, BRAKE_TIME, 2);
 }
 
 bool HerkBrake::isBraked()
@@ -56,4 +83,10 @@ void HerkBrake::setBrakeTravel(float travel_setting)
 float HerkBrake::getBrakeTravel()
 {
 	return brake_travel;
+}
+
+// Mostly for debug
+float HerkBrake::getAngle()
+{
+	return Herkulex.getAngle(motor_ID);
 }
